@@ -161,9 +161,7 @@ td.grade {
 
 @media(max-width:580px){
 
-  .basic-info-table th {
-    display: none;
-  }
+ 
  .input-row {
     flex-direction: column;
     width: 100%;
@@ -317,23 +315,21 @@ function showResultRow(row){
   // =========================
   // بيانات الطالب
   // =========================
-  let basicTable = '<table class="basic-info-table"><tbody><tr>';
+ let basicTable = '<table class="basic-info-table"><tbody>';
 
-  basicFields.forEach(h=>{
-    if(indexByHeader[h] !== undefined){
-      basicTable += `<th>${h}</th>`;
-    }
-  });
+basicFields.forEach(h=>{
+  if(indexByHeader[h] !== undefined){
+    const value = row[indexByHeader[h]] || '';
 
-  basicTable += '</tr><tr>';
+    basicTable += `
+      <tr>
+        <td data-label="${h}">${value}</td>
+      </tr>
+    `;
+  }
+});
 
-  basicFields.forEach(h=>{
-    if(indexByHeader[h] !== undefined){
-      basicTable += `<td>${row[indexByHeader[h]] || ''}</td>`;
-    }
-  });
-
-  basicTable += '</tr></tbody></table>';
+basicTable += '</tbody></table>';
 
   // =========================
   // جدول واحد فقط (كل المواد)
@@ -421,3 +417,4 @@ loadSheet();
 </script>
 </body>
 </html>
+
