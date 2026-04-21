@@ -1,3 +1,5 @@
+
+
 <!doctype html>
 <html lang="ar">
 <head>
@@ -160,10 +162,10 @@ td.grade {
 }
 
 @media(max-width:580px){
-.basic-info-table th {
-  display: none;
-}
- 
+
+  .basic-info-table th {
+    display: none;
+  }
  .input-row {
     flex-direction: column;
     width: 100%;
@@ -248,175 +250,128 @@ td.grade {
     <div id="result" class="result" aria-live="polite"></div>
   </div>
 </div>
-
 <script>
 const SHEET_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRpYZxVgAbPTC5n5-q6vDBo2wjiiOS19lIBLCONBln6I0WjjZ2dNapcZuz6qU0uew/pub?gid=131853627&single=true&output=csv';
-
 const resultEl = document.getElementById('result');
 const searchBtn = document.getElementById('searchBtn');
 const nidInput = document.getElementById('nid');
 
-let headers = [], rows = [], indexByHeader = {}, lookupByNid = {};
+let headers=[], rows=[], indexByHeader={}, lookupByNid={};
 
 function cleanCell(s){ 
   if(!s && s!==0) return ''; 
-  s = String(s).trim(); 
+  s=String(s).trim(); 
   if(s.length>=2 && s[0]==='"' && s[s.length-1]==='"'){ 
-    s = s.slice(1,-1).replace(/""/g,'"'); 
+    s=s.slice(1,-1).replace(/""/g,'"'); 
   } 
   return s; 
 }
 
 function parseCSV(text){ 
-  const lines = text.split(/\r?\n/).filter(l=>l.trim()!==''); 
+  const lines=text.split(/\r?\n/).filter(l=>l.trim()!==''); 
   return lines.map(line=>{ 
     const result=[]; 
     let cur='', inQuotes=false; 
-
     for(let i=0;i<line.length;i++){ 
       const ch=line[i]; 
-      if(ch==='\"' && line[i+1]==='\"'){ cur+='"'; i++; continue;} 
-      if(ch==='\"'){ inQuotes=!inQuotes; continue;} 
-      if(ch===',' && !inQuotes){ result.push(cur); cur=''; continue;} 
+      if(ch==='\"'&&line[i+1]==='\"'){ cur+='"'; i++; continue;} 
+      if(ch==='\"'){inQuotes=!inQuotes; continue;} 
+      if(ch===','&&!inQuotes){result.push(cur); cur=''; continue;} 
       cur+=ch; 
     }
-
     result.push(cur); 
     return result.map(cleanCell); 
   }); 
 }
 
 async function loadSheet(){
-  const resp = await fetch(SHEET_CSV);
-  const text = await resp.text();
-  const parsed = parseCSV(text);
+  try{
+    const resp=await fetch(SHEET_CSV);
+    if(!resp.ok) throw new Error('فشل في جلب الشيت');
+    const text=await resp.text();
+    const parsed=parseCSV(text);
+    if(parsed.length<1) throw new Error('الشيت فارغ أو لم يتم التعرف عليه');
 
-  headers = parsed[0].map(h => h.replace(/\u200E|\u200F/g,'').trim());
-  rows = parsed.slice(1);
+    headers=parsed[0].map(h=>h.replace(/\u200E|\u200F/g,'').trim());
+    rows=parsed.slice(1);
 
-  indexByHeader = {};
-  headers.forEach((h,i)=>indexByHeader[h]=i);
+    indexByHeader={};
+    headers.forEach((h,i)=>indexByHeader[h]=i);
 
-  const nidIndex = indexByHeader['الرقم القومى'] ?? 0;
+    const nidColumnName='الرقم القومى';
+    const nidIndex=indexByHeader[nidColumnName]!==undefined?indexByHeader[nidColumnName]:0;
 
-  lookupByNid = {};
-  rows.forEach(r=>{
-    const nid = (r[nidIndex] || '').replace(/\s+/g,'').trim();
-    if(nid) lookupByNid[nid] = r;
-  });
+    lookupByNid={};
+    rows.forEach(r=>{ 
+      const nid=(r[nidIndex]||'').replace(/\s+/g,'').trim(); 
+      if(nid) lookupByNid[nid]=r; 
+    });
+  }catch(err){ 
+    console.error(err); 
+    resultEl.innerHTML=`<div class="error">خطأ: ${err.message}</div>`; 
+  }
 }
 
 function showResultRow(row){
   if(!row){ 
-    resultEl.innerHTML = '<div class="error">لم يتم العثور على الطالب.</div>'; 
+    resultEl.innerHTML='<div class="error">لم يتم العثور على الطالب بالرقم المدخل.</div>'; 
     return; 
   }
 
-  const basicFields = ['اسم الطالب','الرقم القومى','الصف الدراسى','الفصل','الامتحان'];
-
-  // =========================
-  // بيانات الطالب
-  // =========================
- let basicTable = '<table class="basic-info-table"><tbody>';
-
-basicFields.forEach(h=>{
+  const basicFields = ['اسم الطالب', 'الرقم القومى','الصف الدراسى', 'الفصل','الامتحان' ];
+  let basicTable = '<table class="basic-info-table"><tbody><tr>';
+  basicFields.forEach(h=>{
+    if(indexByHeader[h] !== undefined){
+      basicTable += `<th>${h}</th>`;
+    }
+  });
+  basicTable += '</tr><tr>';
+ basicFields.forEach(h=>{
   if(indexByHeader[h] !== undefined){
     const value = row[indexByHeader[h]] || '';
-
-    basicTable += `
-      <tr>
-        <td data-label="${h}">${value}</td>
-      </tr>
-    `;
+    basicTable += `<td data-label="${h}">${value}</td>`;
   }
 });
 
-basicTable += '</tbody></table>';
+  basicTable += '</tr></tbody></table>';
 
-  // =========================
-  // جدول واحد فقط (كل المواد)
-  // =========================
-  let tableHtml = `
-    <table>
-      <thead>
-        <tr>
-          <th>المادة</th>
-          <th>درجة الطالب</th>
-        </tr>
-      </thead>
-      <tbody>
-  `;
-
-  let used = new Set();
-  let extraSubjects = [];
-
-  // تحديد المواد الأساسية
+  let tableHtml = '<table><thead><tr><th>المادة</th><th>درجة الطالب</th></tr></thead><tbody>';
   headers.forEach(h=>{
-    if(basicFields.includes(h)) return;
-
-    const isScore = h.includes('التحريري') || h.includes('اعمال السنة');
-
-    if(!isScore){
-      used.add(h);
+    if(!basicFields.includes(h)){
+      const grade = row[indexByHeader[h]] || '';
+      tableHtml += `<tr>
+                      <td>${h}</td>
+                      <td class="grade">${grade}</td>
+                    </tr>`;
     }
   });
-
-  // تحديد المواد غير المضافة
-  headers.forEach(h=>{
-    if(basicFields.includes(h)) return;
-
-    const isScore = h.includes('التحريري') || h.includes('اعمال السنة');
-
-    if(!used.has(h) && !isScore){
-      extraSubjects.push(h);
-    }
-  });
-
-  // المواد الأساسية
-  used.forEach(sub=>{
-    tableHtml += `
-      <tr>
-        <td>${sub}</td>
-        <td>${row[indexByHeader[sub]] || '-'}</td>
-      </tr>
-    `;
-  });
-
-  // المواد غير المضافة (نفس الجدول بدون أي فرق)
-  extraSubjects.forEach(sub=>{
-    tableHtml += `
-      <tr>
-        <td>${sub}</td>
-        <td>${row[indexByHeader[sub]] || '-'}</td>
-      </tr>
-    `;
-  });
-
   tableHtml += '</tbody></table>';
 
   resultEl.innerHTML = basicTable + tableHtml;
 }
 
-// =========================
 searchBtn.addEventListener('click', async () => {
   const nid = (nidInput.value || '').replace(/\s+/g,'').trim();
-
-  if(!nid){
-    resultEl.innerHTML = '<div class="error">من فضلك ادخل الرقم القومي.</div>';
-    return;
+  if(!nid){ 
+    resultEl.innerHTML = '<div class="error">من فضلك ادخل الرقم القومي.</div>'; 
+    return; 
   }
-
   await loadSheet();
   const row = lookupByNid[nid];
   showResultRow(row);
 });
 
-nidInput.addEventListener('keydown',(e)=>{
-  if(e.key==='Enter') searchBtn.click();
+
+nidInput.addEventListener('keydown',(e)=>{ 
+  if(e.key==='Enter') searchBtn.click(); 
 });
+
+function convertArabicNumbersToEnglish(str) {
+  const arabicNums = '٠١٢٣٤٥٦٧٨٩';
+  return str.replace(/[٠-٩]/g, d => arabicNums.indexOf(d));
+}
 
 loadSheet();
 </script>
 </body>
 </html>
-
